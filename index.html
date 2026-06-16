@@ -14,6 +14,11 @@ header h1{font-size:16px;font-weight:600;color:#111;flex:1}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#fff;border:1px solid #d1d5db;border-radius:8px;font-size:13px;cursor:pointer;color:#374151}
 .btn:hover{background:#f9fafb}
 #fileInput{display:none}
+.filter-btns{display:flex;gap:4px}
+.filter-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#fff;border:1px solid #d1d5db;border-radius:8px;font-size:13px;cursor:pointer;color:#374151;font-weight:500;transition:all .15s}
+.filter-btn:hover{background:#f9fafb}
+.filter-btn.active{background:#1E3A5F;color:#fff;border-color:#1E3A5F}
+.filter-btn .ldot{width:10px;height:10px}
 main{display:flex;flex-direction:column;height:calc(100vh - 53px)}
 #map{flex:1;min-height:300px;background:#e8f0e8}
 .panel{background:#fff;border-top:1px solid #e5e7eb;max-height:40vh;overflow-y:auto}
@@ -36,6 +41,12 @@ tbody tr:hover td{background:#fafbff;cursor:pointer}
   <button class="btn" onclick="downloadTemplate()">⬇ テンプレートDL</button>
   <label class="btn" for="fileInput">＋ CSVを読み込む</label>
   <input type="file" id="fileInput" accept=".csv">
+  <div class="filter-btns">
+    <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">全て</button>
+    <button class="filter-btn" data-filter="Ⅰ" onclick="setFilter('Ⅰ')"><span class="ldot" style="background:#DC2626"></span>Ⅰ</button>
+    <button class="filter-btn" data-filter="Ⅱ" onclick="setFilter('Ⅱ')"><span class="ldot" style="background:#F59E0B"></span>Ⅱ</button>
+    <button class="filter-btn" data-filter="Ⅲ" onclick="setFilter('Ⅲ')"><span class="ldot" style="background:#059669"></span>Ⅲ</button>
+  </div>
   <span class="badge" id="countBadge">サンプル 5件</span>
 </header>
 
@@ -96,9 +107,18 @@ function makeIcon(priority) {
   return L.divIcon({ html:svg, className:'', iconSize:[32,40], iconAnchor:[16,40], popupAnchor:[0,-42] });
 }
 
-let leafletMap, markerGroup;
+let leafletMap, markerGroup, allRows = [];
 
-function renderRows(rows) {
+function setFilter(filter) {
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.filter === filter);
+  });
+  const filtered = filter === 'all' ? allRows : allRows.filter(r => r.priority === filter);
+  renderRows(filtered, false);
+}
+
+function renderRows(rows, save=true) {
+  if (save) allRows = rows;
   markerGroup.clearLayers();
   document.getElementById('tbody').innerHTML = '';
   document.getElementById('countBadge').textContent = rows.length + '件';
