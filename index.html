@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>災害発生時 利用者住居一覧表｜うるま市</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f6f7;color:#1a1a1a;font-size:14px}
+header{background:#fff;border-bottom:1px solid #e5e7eb;padding:12px 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:1000;flex-wrap:wrap}
+header h1{font-size:16px;font-weight:600;color:#111;flex:1}
+.badge{font-size:12px;padding:3px 10px;border-radius:20px;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#fff;border:1px solid #d1d5db;border-radius:8px;font-size:13px;cursor:pointer;color:#374151}
+.btn:hover{background:#f9fafb}
+#fileInput{display:none}
+main{display:flex;flex-direction:column;height:calc(100vh - 53px)}
+#map{flex:1;min-height:300px;background:#e8f0e8}
+.panel{background:#fff;border-top:1px solid #e5e7eb;max-height:40vh;overflow-y:auto}
+.legend{display:flex;gap:16px;padding:8px 16px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:12px;color:#6b7280;align-items:center;flex-wrap:wrap}
+.ldot{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:#f9fafb;color:#6b7280;font-weight:500;padding:8px 14px;text-align:left;border-bottom:1px solid #e5e7eb;white-space:nowrap;position:sticky;top:0}
+tbody td{padding:9px 14px;border-bottom:1px solid #f3f4f6;vertical-align:middle}
+tbody tr:hover td{background:#fafbff;cursor:pointer}
+.tag{display:inline-block;font-size:12px;padding:2px 10px;border-radius:20px;font-weight:600;white-space:nowrap}
+.note{color:#9ca3af;font-size:12px}
+#errorMsg{color:#b91c1c;font-size:12px;padding:6px 16px;background:#fef2f2;display:none}
+#loadingMsg{color:#374151;font-size:12px;padding:6px 16px;background:#fffbeb;display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📍 災害発生時 利用者住居一覧表｜うるま市</h1>
+  <button class="btn" onclick="downloadTemplate()">⬇ テンプレートDL</button>
+  <label class="btn" for="fileInput">＋ CSVを読み込む</label>
+  <input type="file" id="fileInput" accept=".csv">
+  <span class="badge" id="countBadge">サンプル 5件</span>
+</header>
+
+<main>
+  <div id="map"></div>
+  <div class="panel">
+    <div class="legend">
+      <span><span class="ldot" style="background:#DC2626"></span>対応必要度Ⅰ（最優先）</span>
+      <span><span class="ldot" style="background:#F59E0B"></span>対応必要度Ⅱ</span>
+      <span><span class="ldot" style="background:#059669"></span>対応必要度Ⅲ</span>
+      <span style="margin-left:auto;color:#9ca3af">行をクリックすると地図が移動します</span>
+    </div>
+    <div id="errorMsg"></div>
+    <div id="loadingMsg"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>利用者名</th>
+          <th>住所</th>
+          <th>対応必要度</th>
+          <th>理由</th>
+          <th>避難先</th>
+          <th>緊急連絡先</th>
+          <th>指示医療機関</th>
+          <th>医療機関連絡先</th>
+          <th>備考</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+const SAMPLES = [
+  {name:'田中 幸子', addr:'沖縄県うるま市みどり町1丁目付近', lat:26.3790, lng:127.8575, priority:'Ⅰ', reason:'人工呼吸器使用・停電時即時対応必要', evacName:'うるま市立中部病院',          contact:'田中 一郎', phone:'090-1111-2222', hospital:'中部徳洲会病院',     hospitalPhone:'098-973-4111', note:'バッテリー持続2時間'},
+  {name:'宮城 勇',   addr:'沖縄県うるま市大田付近',          lat:26.3566, lng:127.8654, priority:'Ⅱ', reason:'酸素療法併用・要電源確保',         evacName:'具志川市民体育館（福祉避難所）', contact:'宮城 美恵', phone:'090-3333-4444', hospital:'うるま市立中部病院', hospitalPhone:'098-974-3111', note:'酸素併用'},
+  {name:'金城 清美', addr:'沖縄県うるま市石川石崎付近',      lat:26.4270, lng:127.8292, priority:'Ⅰ', reason:'侵襲的人工呼吸器・吸引器併用',     evacName:'石川病院',                    contact:'金城 賢二', phone:'090-5555-6666', hospital:'石川病院',           hospitalPhone:'098-965-5050', note:'吸引器併用'},
+  {name:'照屋 博',   addr:'沖縄県うるま市勝連南風原付近',    lat:26.3272, lng:127.8821, priority:'Ⅲ', reason:'自力避難可能・家族サポートあり',   evacName:'与勝総合病院',                contact:'照屋 幸枝', phone:'090-7777-8888', hospital:'与勝総合病院',       hospitalPhone:'098-978-5235', note:'バッテリー持続4時間'},
+  {name:'仲村 里奈', addr:'沖縄県うるま市田場付近',          lat:26.3668, lng:127.8632, priority:'Ⅱ', reason:'在宅酸素療法・単身居住',           evacName:'うるま市立中部病院',          contact:'仲村 健',   phone:'090-9999-0000', hospital:'中部徳洲会病院',     hospitalPhone:'098-973-4111', note:'在宅酸素療法併用'},
+];
+
+function esc(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+
+function priorityStyle(p) {
+  if (p==='Ⅰ') return {bg:'#FEF2F2', color:'#991B1B', border:'#FECACA'};
+  if (p==='Ⅱ') return {bg:'#FFFBEB', color:'#92400E', border:'#FDE68A'};
+  return {bg:'#ECFDF5', color:'#065F46', border:'#A7F3D0'};
+}
+
+function makeIcon(priority) {
+  const color = priority==='Ⅰ' ? '#DC2626' : priority==='Ⅱ' ? '#F59E0B' : '#059669';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+    <path d="M16 2C9 2 4 7.5 4 14c0 8 12 24 12 24s12-16 12-24C28 7.5 23 2 16 2Z" fill="${color}" stroke="white" stroke-width="2"/>
+    <circle cx="16" cy="14" r="5" fill="white" opacity="0.9"/>
+    <circle cx="16" cy="14" r="3" fill="${color}"/>
+  </svg>`;
+  return L.divIcon({ html:svg, className:'', iconSize:[32,40], iconAnchor:[16,40], popupAnchor:[0,-42] });
+}
+
+let leafletMap, markerGroup;
+
+function renderRows(rows) {
+  markerGroup.clearLayers();
+  document.getElementById('tbody').innerHTML = '';
+  document.getElementById('countBadge').textContent = rows.length + '件';
+
+  const bounds = [];
+  rows.forEach(r => {
+    const st = priorityStyle(r.priority);
+    const marker = L.marker([r.lat, r.lng], {icon: makeIcon(r.priority)})
+      .bindPopup(
+        `<div style="font-weight:600;font-size:14px;margin-bottom:6px">${esc(r.name)}</div>` +
+        `<div style="font-size:12px;line-height:2;color:#333">` +
+        `<b>住所:</b> ${esc(r.addr)}<br>` +
+        `<b>対応必要度:</b> <span style="font-weight:600;color:${st.color}">${esc(r.priority)}</span>　${esc(r.reason)}<br>` +
+        `<b>避難先:</b> ${esc(r.evacName)}<br>` +
+        `<b>緊急連絡先:</b> ${esc(r.contact)} ${esc(r.phone)}<br>` +
+        `<b>指示医療機関:</b> ${esc(r.hospital)} ${esc(r.hospitalPhone)}` +
+        `</div>` +
+        (r.note ? `<div style="font-size:11px;color:#9ca3af;margin-top:4px;border-top:1px solid #f0f0f0;padding-top:4px">${esc(r.note)}</div>` : ''),
+        {maxWidth: 280}
+      );
+    markerGroup.addLayer(marker);
+    bounds.push([r.lat, r.lng]);
+
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td style="font-weight:600">${esc(r.name)}</td>` +
+      `<td class="note">${esc(r.addr)}</td>` +
+      `<td><span class="tag" style="background:${st.bg};color:${st.color};border:1px solid ${st.border}">${esc(r.priority)}</span></td>` +
+      `<td class="note">${esc(r.reason)}</td>` +
+      `<td>${esc(r.evacName)}</td>` +
+      `<td>${esc(r.contact)}<br><span class="note">${esc(r.phone)}</span></td>` +
+      `<td>${esc(r.hospital)}</td>` +
+      `<td style="white-space:nowrap">${esc(r.hospitalPhone)}</td>` +
+      `<td class="note">${esc(r.note)}</td>`;
+    tr.addEventListener('click', () => {
+      leafletMap.setView([r.lat, r.lng], 15);
+      markerGroup.eachLayer(m => {
+        if (m.getLatLng().lat === r.lat && m.getLatLng().lng === r.lng) m.openPopup();
+      });
+    });
+    document.getElementById('tbody').appendChild(tr);
+  });
+
+  if (bounds.length > 1) leafletMap.fitBounds(bounds, {padding:[40,40]});
+  else if (bounds.length === 1) leafletMap.setView(bounds[0], 14);
+}
+
+async function geocodeGSI(address) {
+  try {
+    const res = await fetch('https://msearch.gsi.go.jp/address-search/AddressSearch?q=' + encodeURIComponent(address));
+    const data = await res.json();
+    if (data && data[0]) {
+      const c = data[0].geometry.coordinates;
+      return { lat: parseFloat(c[1]), lng: parseFloat(c[0]) };
+    }
+  } catch(e) {}
+  return null;
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^["'\uFEFF]+|["']+$/g,''));
+  return lines.slice(1).map(line => {
+    const vals = line.split(',').map(v => v.trim().replace(/^["']|["']$/g,''));
+    const obj = {};
+    headers.forEach((h,i) => obj[h] = vals[i]||'');
+    return obj;
+  }).filter(r => r['利用者名'] && !r['利用者名'].includes('サンプル'));
+}
+
+function downloadTemplate() {
+  const csv = [
+    '利用者名,住所,対応必要度,理由,避難先名称,緊急連絡先名,緊急連絡先電話番号,指示医療機関,指示医療機関連絡先,備考',
+    '山田太郎（サンプル）,沖縄県うるま市具志川1234,Ⅰ,人工呼吸器使用・停電時即時対応必要,うるま市立中部病院,山田花子,090-0000-0001,中部徳洲会病院,098-973-4111,バッテリー持続2時間',
+    '佐藤次郎（サンプル）,沖縄県うるま市石川1567,Ⅱ,酸素療法併用・要電源確保,具志川市民体育館（福祉避難所）,佐藤幸子,090-0000-0002,うるま市立中部病院,098-974-3111,酸素併用',
+  ].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = '利用者住居一覧_テンプレート.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function initMap() {
+  leafletMap = L.map('map').setView([26.375, 127.865], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 18
+  }).addTo(leafletMap);
+  markerGroup = L.layerGroup().addTo(leafletMap);
+
+  // サンプル表示
+  renderRows(SAMPLES);
+
+  // CSV読み込みイベント（initMap内で登録して確実にLeaflet読み込み後に動かす）
+  document.getElementById('fileInput').addEventListener('change', async function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const errEl = document.getElementById('errorMsg');
+    const loadEl = document.getElementById('loadingMsg');
+    errEl.style.display = 'none';
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      try {
+        const rawRows = parseCSV(ev.target.result);
+        if (!rawRows.length) {
+          errEl.textContent = '有効なデータが見つかりませんでした（サンプル行は除外されます）';
+          errEl.style.display = 'block';
+          return;
+        }
+        loadEl.textContent = '住所を変換中... 0/' + rawRows.length + '件';
+        loadEl.style.display = 'block';
+        const rows = [];
+        for (let i=0; i<rawRows.length; i++) {
+          const r = rawRows[i];
+          const geo = await geocodeGSI(r['住所']||'');
+          if (geo) {
+            rows.push({
+              name: r['利用者名'], addr: r['住所'],
+              priority: r['対応必要度'], reason: r['理由'],
+              evacName: r['避難先名称'], contact: r['緊急連絡先名'],
+              phone: r['緊急連絡先電話番号'],
+              hospital: r['指示医療機関'], hospitalPhone: r['指示医療機関連絡先'],
+              note: r['備考'], lat: geo.lat, lng: geo.lng
+            });
+          }
+          loadEl.textContent = '住所を変換中... ' + (i+1) + '/' + rawRows.length + '件';
+        }
+        loadEl.style.display = 'none';
+        renderRows(rows);
+        // 同じファイルを再度読み込めるようリセット
+        e.target.value = '';
+      } catch(err) {
+        errEl.textContent = 'CSVの読み込みに失敗しました: ' + err.message;
+        errEl.style.display = 'block';
+        loadEl.style.display = 'none';
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onload="initMap()"></script>
+</body>
+</html>
